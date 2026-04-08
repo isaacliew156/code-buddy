@@ -44,6 +44,12 @@ This wiki contains knowledge compiled from multiple documents covering geopoliti
 - [Anime Industry Trends 2026](concepts/anime_industry_trends_2026.md) - Business, production, and distribution changes in anime industry
 - [Major Anime Franchises 2026](concepts/major_anime_franchises_2026.md) - Key franchises with significant developments in 2026
 
+## Tools and Scripts
+
+### Stock Market Data
+- [Stock API Guide](concepts/stock_api_guide.md) - How to fetch Malaysian and global stock data using yfinance
+- Available scripts: `scripts/get_maybank_price.py` - Fetches current Maybank (1155.KL) stock price and key metrics
+
 ## Timeline Overview
 
 ### 2024-2025 (Pre-War)
@@ -106,8 +112,15 @@ This wiki contains knowledge compiled from multiple documents covering geopoliti
 - One Piece transitioning to seasonal format
 - Anime industry experiencing nostalgia remake trend
 
+## Tools and Scripts Status (as of April 8, 2026)
+- Stock API script available: `scripts/get_maybank_price.py`
+- Can fetch Malaysian stocks using format: {4-digit-code}.KL
+- Data delayed ~15 minutes for Malaysian stocks
+- Script provides current price, daily change, volume, and key metrics
+
 ## Sources
 - Primary source: `data/raw/iran-situation-2026.md`
 - Financial source: `data/raw/financial-markets-april-2026.md`
 - Anime source: `data/raw/anime-spring-2026.md`
-- Last updated: April 7, 2026
+- Stock API guide: `data/raw/stock-api-guide.md`
+- Last updated: April 8, 2026

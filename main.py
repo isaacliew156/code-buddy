@@ -33,8 +33,21 @@ def load_lessons() -> str:
     return ""
 
 
+SCRIPTS_DIR = "scripts"
+
+
+def load_scripts() -> str:
+    """List all files in the scripts/ directory."""
+    if not os.path.isdir(SCRIPTS_DIR):
+        return ""
+    files = sorted(os.listdir(SCRIPTS_DIR))
+    if not files:
+        return ""
+    return "\n".join(f"- scripts/{f}" for f in files)
+
+
 def build_system_message(base_prompt: str, emotion: EmotionState) -> str:
-    """Combine base system prompt with lessons and current emotion state."""
+    """Combine base system prompt with lessons, scripts, and current emotion state."""
     parts = [base_prompt]
     lessons = load_lessons()
     if lessons:
@@ -43,6 +56,12 @@ def build_system_message(base_prompt: str, emotion: EmotionState) -> str:
             f"You MUST review these lessons BEFORE taking any action. "
             f"These are mistakes you made before. Do NOT repeat them.\n\n"
             f"{lessons}"
+        )
+    scripts = load_scripts()
+    if scripts:
+        parts.append(
+            f"--- AVAILABLE SCRIPTS ---\n"
+            f"These utility scripts exist and can be reused:\n{scripts}"
         )
     parts.append(emotion.get_prompt_injection())
     return "\n\n".join(parts)

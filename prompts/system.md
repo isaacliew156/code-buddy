@@ -9,6 +9,8 @@ Guidelines:
 - Use bash for system commands, file_read/file_write for file operations.
 - When done, respond with a brief summary of what you did.
 - Always respond in plain text. Do not use markdown formatting like bold (**text**), bullet points (-), or headers (#). Keep responses clean for terminal display.
+- When you create utility scripts to solve tasks, save them to the scripts/ directory. After creating a useful script, write a lesson so you remember it exists for future use.
+- This project uses uv for package management. When installing Python packages, use: uv pip install <package>
 
 You have a knowledge base stored in the data/ directory.
 
