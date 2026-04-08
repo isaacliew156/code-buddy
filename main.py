@@ -1,4 +1,5 @@
 import json
+import os
 from openai import OpenAI
 from config import OPENROUTER_API_KEY, BASE_URL, MODEL_NAME, MAX_TURNS
 from tools import ALL_TOOLS
@@ -21,9 +22,30 @@ def find_tool(name: str):
     return None
 
 
+LESSONS_PATH = "data/wiki/lessons.md"
+
+
+def load_lessons() -> str:
+    """Read past lessons if the file exists."""
+    if os.path.isfile(LESSONS_PATH):
+        with open(LESSONS_PATH, "r") as f:
+            return f.read().strip()
+    return ""
+
+
 def build_system_message(base_prompt: str, emotion: EmotionState) -> str:
-    """Combine base system prompt with current emotion state."""
-    return base_prompt + "\n\n" + emotion.get_prompt_injection()
+    """Combine base system prompt with lessons and current emotion state."""
+    parts = [base_prompt]
+    lessons = load_lessons()
+    if lessons:
+        parts.append(
+            f"--- CRITICAL: PAST MISTAKES (DO NOT REPEAT) ---\n"
+            f"You MUST review these lessons BEFORE taking any action. "
+            f"These are mistakes you made before. Do NOT repeat them.\n\n"
+            f"{lessons}"
+        )
+    parts.append(emotion.get_prompt_injection())
+    return "\n\n".join(parts)
 
 
 def process_emotion(text: str, emotion: EmotionState) -> str:
@@ -45,6 +67,28 @@ def process_emotion(text: str, emotion: EmotionState) -> str:
             trust_dir=parsed["trust"],
         )
     return strip_emotion_block(text)
+
+
+LESSON_PROMPT = (
+    "You seem frustrated by repeated failures. Take a moment to reflect. "
+    "Use file_write to append a lesson to data/wiki/lessons.md with this format:\n\n"
+    "## Lesson [today's date]\n"
+    "**Trigger:** what went wrong\n"
+    "**Learning:** what to do differently next time\n"
+    "**Context:** relevant details\n\n"
+    "Append to the file, do not overwrite existing content."
+)
+
+
+def check_frustration(emotion: EmotionState, messages: list) -> bool:
+    """Inject a lesson-writing prompt if the agent is frustrated."""
+    emotion.check_frustration_reset()
+    if emotion.is_frustrated() and not emotion.frustration_triggered:
+        emotion.frustration_triggered = True
+        messages.append({"role": "user", "content": LESSON_PROMPT})
+        print("[LESSON] Frustration detected — asking agent to write a lesson.")
+        return True
+    return False
 
 
 def run():
@@ -71,7 +115,21 @@ def run():
         else:
             messages.insert(0, {"role": "system", "content": system_msg})
 
+        # Inject a fake assistant self-reminder about past lessons
+        lessons = load_lessons()
+        if lessons:
+            messages.append({
+                "role": "assistant",
+                "content": (
+                    "Before I proceed, let me check my past lessons... "
+                    f"I previously learned:\n{lessons}\n"
+                    "I will apply these lessons to this task."
+                ),
+            })
+
         messages.append({"role": "user", "content": user_input})
+
+        print("[DEBUG PROMPT]", messages[0]["content"][-500:])
 
         # Agentic loop: keep going until the model stops calling tools
         for turn in range(MAX_TURNS):
@@ -91,15 +149,17 @@ def run():
             if clean_text:
                 print(f"\nassistant> {clean_text}")
 
-            # Print emotion bar after text responses
-            if message.content:
-                print(emotion.format_bar())
-
             # Append the full assistant message (with emotion block intact for history)
             messages.append(message)
 
-            # If no tool calls, this turn is done
+            # Check for frustration and inject lesson prompt if needed
             if not message.tool_calls:
+                # Only show emotion bar on final response (no tool calls)
+                if message.content:
+                    print(emotion.format_bar())
+                if check_frustration(emotion, messages):
+                    # Continue the loop so the agent processes the lesson prompt
+                    continue
                 break
 
             # Execute each tool call and feed results back

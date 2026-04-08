@@ -31,6 +31,7 @@ class EmotionState:
         self.arousal = clamp(arousal)
         self.trust = clamp(trust)
         self.emotion_log: list[dict] = []
+        self.frustration_triggered = False
 
     def decay(self):
         """Exponential decay toward baseline each turn."""
@@ -50,6 +51,16 @@ class EmotionState:
             "arousal": round(self.arousal, 3),
             "trust": round(self.trust, 3),
         })
+
+    def is_frustrated(self) -> bool:
+        """Frustration = low valence + high arousal."""
+        # TODO: raise threshold back after testing
+        return self.valence < 0.45 and self.arousal > 0.4
+
+    def check_frustration_reset(self):
+        """Reset frustration flag when valence recovers above 0.4."""
+        if self.frustration_triggered and self.valence > 0.4:
+            self.frustration_triggered = False
 
     def get_face(self) -> str:
         return EMOTION_FACES[(self.valence >= 0.5, self.arousal >= 0.5)]
