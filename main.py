@@ -148,8 +148,6 @@ def run():
 
         messages.append({"role": "user", "content": user_input})
 
-        print("[DEBUG PROMPT]", messages[0]["content"][-500:])
-
         # Agentic loop: keep going until the model stops calling tools
         for turn in range(MAX_TURNS):
             response = client.chat.completions.create(
@@ -190,6 +188,8 @@ def run():
                     result = tool.call(**args)
                 else:
                     result = f"[error] Unknown tool: {tc.function.name}"
+                display = result if len(result) <= 500 else result[:500] + "... (truncated)"
+                print(f"  [result] {display}")
                 messages.append(
                     {
                         "role": "tool",
