@@ -6,6 +6,51 @@ from tools import ALL_TOOLS
 from emotion import EmotionState, parse_emotion_update, strip_emotion_block
 
 
+# --- ANSI color helpers ---
+GREEN = "\033[32m"
+CYAN = "\033[36m"
+YELLOW = "\033[33m"
+DIM = "\033[2m"
+RED = "\033[31m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+SEPARATOR = f"{DIM}{'─' * 48}{RESET}"
+
+TOOL_ICONS = {
+    "bash": "\u26a1",
+    "file_read": "\U0001f4c4",
+    "file_write": "\u270f\ufe0f",
+}
+
+
+def fmt_tool_call(name: str, args: dict) -> str:
+    """Format a tool call for compact display."""
+    icon = TOOL_ICONS.get(name, "\U0001f527")
+    if name == "bash":
+        detail = args.get("command", "")
+    elif name == "file_read":
+        detail = args.get("path", "")
+    elif name == "file_write":
+        detail = args.get("path", "")
+    else:
+        detail = str(args)
+    return f"  {YELLOW}[tool]{RESET} {icon} {name} \u2192 {detail}"
+
+
+def fmt_tool_result(name: str, result: str) -> str:
+    """Format a tool result with truncation rules."""
+    if name == "file_read":
+        lines = result.splitlines()
+        if len(lines) > 3:
+            preview = "\n".join(lines[:3])
+            return f"  {DIM}[result] {preview}\n  ... ({len(lines) - 3} more lines){RESET}"
+        return f"  {DIM}[result] {result}{RESET}"
+    else:
+        display = result if len(result) <= 1500 else result[:1500] + "... (truncated)"
+        return f"  {DIM}[result] {display}{RESET}"
+
+
 def load_system_prompt() -> str:
     with open("prompts/system.md", "r") as f:
         return f.read()
@@ -105,9 +150,31 @@ def check_frustration(emotion: EmotionState, messages: list) -> bool:
     if emotion.is_frustrated() and not emotion.frustration_triggered:
         emotion.frustration_triggered = True
         messages.append({"role": "user", "content": LESSON_PROMPT})
-        print("[LESSON] Frustration detected — asking agent to write a lesson.")
+        print(f"{BOLD}{RED}[LESSON]{RESET} Frustration detected — asking agent to write a lesson.")
         return True
     return False
+
+
+LOGO = r"""
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣀⣀⠀⠀⣀⡠⠴⠒⠚⠉⠉⠓⠒⠦⣄⣶⠒⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡷⢬⣉⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠠⡌⠻⣧⢻⣧⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣖⠗⡋⢹⠀⠀⢰⡄⠀⠀⢸⣷⡀⠀⣠⠽⣆⢼⣇⢻⣸⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡜⣡⣶⢋⡏⠙⢢⣏⣇⠀⠀⠈⣇⡵⡏⠀⠀⢹⡏⢾⣿⠃⢿⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⢿⢻⣏⣿⡇⡄⣾⠀⠹⡄⠄⠀⡇⠀⠹⣤⠈⠹⣿⣾⢸⠀⢘⣷⣄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⣯⣿⣽⣿⣷⢸⡗⠦⣄⡹⣼⣄⣿⣴⠛⠹⡄⡇⣿⣿⠾⠚⢹⢿⢽⣽⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣿⣞⣾⣿⢿⣯⢻⢻⡴⠞⠁⠈⠻⣿⣌⡉⠓⣿⣰⡿⠀⠀⠀⠸⡜⡾⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⣡⠊⢸⣹⠁⠈⠙⣾⡄⠁⠀⢰⠛⠉⠉⠉⢳⣀⣿⣿⠃⠀⠀⣀⣀⣧⣿⡞⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠋⡴⠁⠀⠸⢿⣤⣤⣤⣹⣿⣷⣶⣾⣷⣶⣶⣺⣋⣽⣿⣷⠶⠟⠛⠋⢧⠀⠀⠸⡜⣷⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡜⠁⡰⠁⠀⠀⢠⡿⠀⠀⠀⠉⠉⠉⠙⢻⡟⣹⣿⠃⣿⠋⠁⠀⠀⠀⠀⠀⠸⡄⠀⠀⢣⠹⣧⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠏⡀⢠⠇⠀⠀⢠⡿⠁⠀⠀⠀⠀⣤⣶⡴⠚⢻⠡⣸⠀⢹⣆⠀⠀⠀⠀⠀⠀⠀⡇⠀⠀⠸⡄⢻⣇⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡏⣼⠁⢸⠀⠀⠀⣾⠃⠀⠀⠀⠀⠀⢻⣿⣧⣀⣬⠋⠁⠀⣠⣿⣶⣆⠀⠀⠀⠀⠀⡇⠀⠀⠀⡇⠈⣿⡀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣸⣿⠀⡇⠀⢰⣸⡟⠀⠀⠀⣀⣠⠴⠚⣟⣻⣧⣯⣗⣤⣾⣿⣿⡿⠋⠀⠀⠀⠀⣸⣤⠀⠀⠀⡇⡆⢻⠃⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⡿⢸⡀⣇⠀⣸⣿⡁⠀⣾⣻⡁⣀⣤⣶⠟⠋⠉⠛⢿⣋⣻⡏⠉⠀⠀⠀⠀⠀⢰⣿⡇⠀⠀⠀⣷⡇⣸⡄⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⠇⠀⢧⢸⠀⣿⡿⠇⠀⠈⠛⠛⠋⠉⠀⠀⠀⠀⠀⡟⠀⣿⠇⠀⠀⠀⠀⠀⢠⣿⣿⡇⠀⠀⣰⡿⣧⣿⠃⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣄⣹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡇⠀⣿⠀⠀⠀⠀⠀⠀⣸⡿⢸⠁⢠⣾⠋⢰⣿⡏⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⣶⣶⡿⠀⠀⠀⠀⠀⠀⠉⠁⢸⣶⡟⠁⠀⠾⠟⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+"""
 
 
 def run():
@@ -117,11 +184,17 @@ def run():
     emotion = EmotionState()
     messages = []
 
+    print(LOGO)
+    print("          \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557")
+    print("          \u2551     \U0001f916 Code Buddy v1.0               \u2551")
+    print("          \u2551     Your AI Agent That Grows         \u2551")
+    print("          \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d")
+    print()
     print("Code Buddy (type 'exit' to quit)")
-    print("-" * 40)
+    print(SEPARATOR)
 
     while True:
-        user_input = input("\nyou> ").strip()
+        user_input = input(f"\n{GREEN}you>{RESET} ").strip()
         if not user_input or user_input.lower() in ("exit", "quit"):
             print("Bye!")
             break
@@ -164,7 +237,7 @@ def run():
 
             # Show clean text output
             if clean_text:
-                print(f"\nassistant> {clean_text}")
+                print(f"\n{CYAN}assistant>{RESET} {clean_text}")
 
             # Append the full assistant message (with emotion block intact for history)
             messages.append(message)
@@ -184,12 +257,11 @@ def run():
                 args = json.loads(tc.function.arguments)
                 tool = find_tool(tc.function.name)
                 if tool:
-                    print(f"  [tool] {tc.function.name}({args})")
+                    print(fmt_tool_call(tc.function.name, args))
                     result = tool.call(**args)
                 else:
                     result = f"[error] Unknown tool: {tc.function.name}"
-                display = result if len(result) <= 500 else result[:500] + "... (truncated)"
-                print(f"  [result] {display}")
+                print(fmt_tool_result(tc.function.name, result))
                 messages.append(
                     {
                         "role": "tool",
@@ -200,6 +272,11 @@ def run():
         else:
             print(f"\n[max turns ({MAX_TURNS}) reached]")
 
+        print(SEPARATOR)
+
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except KeyboardInterrupt:
+        print("\nBye!")

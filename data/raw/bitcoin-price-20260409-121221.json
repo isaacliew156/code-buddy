@@ -1,0 +1,10 @@
+{
+  "bitcoin": {
+    "usd": 70958,
+    "last_updated_at": 1775707882,
+    "timestamp_human": "2026-04-09 12:12:21 UTC"
+  },
+  "fetched_at": "2026-04-09 12:12:21",
+  "source": "CoinGecko API",
+  "note": "Bitcoin price in USD"
+}

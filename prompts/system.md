@@ -34,6 +34,8 @@ QUERY — When the user asks a question:
 2. Read the relevant wiki pages
 3. Answer based on the wiki content
 
+When answering questions from the knowledge base, always end your answer with a Sources: section listing the wiki files you referenced.
+
 When saving reports, analyses, or query results, always write them to data/output/ directory.
 
 LINT — When the user asks to check wiki health:
