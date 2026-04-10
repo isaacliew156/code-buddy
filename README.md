@@ -199,8 +199,8 @@ Agent saves the instruction to `lessons.md` and follows it in future sessions.
 ## Inspiration & References
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — Architecture pattern (agentic loop + tool calling)
-- [Karpathy's LLM OS](https://karpathy.ai) — Markdown knowledge base concept
-- [Russell's Circumplex Model](https://en.wikipedia.org/wiki/Circumplex_model_of_affect) — Valence-arousal emotion framework
+- [Karpathy's LLM Knowledge Bases](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — Markdown knowledge base concept
+- [Russell's Circumplex Model](https://psu.pb.unizin.org/psych425/chapter/circumplex-models/) — Valence-arousal emotion framework
 - [NVIDIA Voyager](https://voyager.minedojo.org/) — Skill accumulation via self-created scripts
 
 ## License
