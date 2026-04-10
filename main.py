@@ -1,5 +1,9 @@
 import json
 import os
+import random
+import sys
+import threading
+import time
 from openai import OpenAI
 from config import OPENROUTER_API_KEY, BASE_URL, MODEL_NAME, MAX_TURNS
 from tools import ALL_TOOLS
@@ -22,6 +26,72 @@ TOOL_ICONS = {
     "file_read": "\U0001f4c4",
     "file_write": "\u270f\ufe0f",
 }
+
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+THINKING_MESSAGES = [
+    "Thinking...",
+    "Brewing coffee...",
+    "Consulting the matrix...",
+    "Reading the docs...",
+    "Asking my brain cells...",
+    "Compiling thoughts...",
+    "Crunching numbers...",
+    "Warming up neurons...",
+    "Downloading intelligence...",
+    "Channeling inner Karpathy...",
+    "Summoning the LLM gods...",
+    "Petting virtual cats...",
+    "Calculating vibes...",
+    "Loading personality.dll...",
+    "Reticulating splines...",
+    "Defragmenting brain...",
+    "sudo think harder...",
+    "git pull wisdom...",
+    "pip install brainpower...",
+    "Consulting Stack Overflow...",
+    "Rolling a d20 for intelligence...",
+    "Asking ChatGPT... jk...",
+    "Converting caffeine to code...",
+    "Searching for meaning...",
+    "Tuning hyperparameters...",
+    "Running gradient descent on your question...",
+    "Allocating brain memory...",
+    "Spinning up attention heads...",
+    "Tokenizing your soul...",
+    "Backpropagating thoughts...",
+]
+
+
+class Spinner:
+    """Animated spinner for waiting on API calls."""
+
+    def __init__(self, message="Thinking..."):
+        self.message = message
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _spin(self):
+        i = 0
+        while not self._stop.is_set():
+            frame = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
+            sys.stdout.write(f"\r{DIM}{frame} {self.message}{RESET}")
+            sys.stdout.flush()
+            i += 1
+            time.sleep(0.08)
+        # Clear the spinner line
+        sys.stdout.write("\r" + " " * (len(self.message) + 4) + "\r")
+        sys.stdout.flush()
+
+    def start(self):
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
 
 
 def fmt_tool_call(name: str, args: dict) -> str:
@@ -155,6 +225,116 @@ def check_frustration(emotion: EmotionState, messages: list) -> bool:
     return False
 
 
+EMOTION_BLOCK_START = "[EMOTION_UPDATE]"
+EMOTION_BLOCK_END = "[/EMOTION_UPDATE]"
+
+
+def stream_response(client, model, messages, tool_schemas, spinner):
+    """Stream a chat completion, returning (full_text, tool_calls_list).
+
+    Shows spinner until first token arrives, then streams text char by char.
+    Suppresses [EMOTION_UPDATE]...[/EMOTION_UPDATE] blocks from terminal output.
+    Accumulates tool calls from deltas.
+    """
+    stream = client.chat.completions.create(
+        model=model,
+        max_tokens=4096,
+        tools=tool_schemas,
+        messages=messages,
+        stream=True,
+    )
+
+    full_text = ""
+    tool_calls_acc = {}  # index -> {id, name, arguments}
+    started_text = False
+    in_emotion_block = False
+    # Buffer for detecting the start of [EMOTION_UPDATE]
+    # We buffer chars that could be the beginning of the tag
+    pending = ""
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta if chunk.choices else None
+        if not delta:
+            continue
+
+        # Stream text content
+        if delta.content:
+            full_text += delta.content
+
+            if not started_text:
+                spinner.stop()
+                sys.stdout.write(f"\n{CYAN}assistant>{RESET} ")
+                started_text = True
+
+            # Process each character for emotion block detection
+            for ch in delta.content:
+                if in_emotion_block:
+                    # Silently consume until we see the end tag
+                    pending += ch
+                    if pending.endswith(EMOTION_BLOCK_END):
+                        in_emotion_block = False
+                        pending = ""
+                else:
+                    pending += ch
+                    # Check if pending could be the start of the tag
+                    if EMOTION_BLOCK_START.startswith(pending):
+                        # Still a potential match, keep buffering
+                        continue
+                    elif EMOTION_BLOCK_START in pending:
+                        # Tag found — print everything before it, enter block mode
+                        before = pending[:pending.index(EMOTION_BLOCK_START)]
+                        if before:
+                            sys.stdout.write(before)
+                            sys.stdout.flush()
+                        in_emotion_block = True
+                        # Keep the rest after the start tag in pending
+                        pending = pending[pending.index(EMOTION_BLOCK_START) + len(EMOTION_BLOCK_START):]
+                    else:
+                        # No match possible — flush pending to terminal
+                        sys.stdout.write(pending)
+                        sys.stdout.flush()
+                        pending = ""
+
+        # Accumulate tool calls across chunks
+        if delta.tool_calls:
+            if not started_text:
+                spinner.stop()
+            for tc_delta in delta.tool_calls:
+                idx = tc_delta.index
+                if idx not in tool_calls_acc:
+                    tool_calls_acc[idx] = {
+                        "id": tc_delta.id or "",
+                        "name": "",
+                        "arguments": "",
+                    }
+                if tc_delta.id:
+                    tool_calls_acc[idx]["id"] = tc_delta.id
+                if tc_delta.function:
+                    if tc_delta.function.name:
+                        tool_calls_acc[idx]["name"] = tc_delta.function.name
+                    if tc_delta.function.arguments:
+                        tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+
+    # Stop spinner in case stream ended without text or tool calls
+    spinner.stop()
+
+    # Flush any remaining pending text (not part of emotion block)
+    if pending and not in_emotion_block:
+        sys.stdout.write(pending)
+        sys.stdout.flush()
+
+    if started_text:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+    # Convert accumulated tool calls to a structured list
+    tool_calls = []
+    for idx in sorted(tool_calls_acc.keys()):
+        tool_calls.append(tool_calls_acc[idx])
+
+    return full_text, tool_calls
+
+
 LOGO = r"""
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣀⣀⠀⠀⣀⡠⠴⠒⠚⠉⠉⠓⠒⠦⣄⣶⠒⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡷⢬⣉⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠠⡌⠻⣧⢻⣧⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -185,10 +365,10 @@ def run():
     messages = []
 
     print(LOGO)
-    print("          \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557")
-    print("          \u2551     \U0001f916 Code Buddy v1.0               \u2551")
-    print("          \u2551     Your AI Agent That Grows         \u2551")
-    print("          \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d")
+    print("         \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557")
+    print("         \u2551           \U0001f916 Code Buddy              \u2551")
+    print("         \u2551     ~ Your Coding Friend \u55b5 Miao     \u2551")
+    print("         \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d")
     print()
     print("Code Buddy (type 'exit' to quit)")
     print(SEPARATOR)
@@ -223,49 +403,54 @@ def run():
 
         # Agentic loop: keep going until the model stops calling tools
         for turn in range(MAX_TURNS):
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                max_tokens=4096,
-                tools=tool_schemas,
-                messages=messages,
+            spinner = Spinner(random.choice(THINKING_MESSAGES))
+            spinner.start()
+
+            full_text, tool_calls = stream_response(
+                client, MODEL_NAME, messages, tool_schemas, spinner
             )
 
-            message = response.choices[0].message
+            # Process emotion from the full text
+            clean_text = process_emotion(full_text, emotion)
 
-            # Process emotion and get clean text
-            clean_text = process_emotion(message.content, emotion)
+            # Build assistant message for history
+            assistant_msg = {"role": "assistant", "content": full_text or ""}
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                        },
+                    }
+                    for tc in tool_calls
+                ]
+            messages.append(assistant_msg)
 
-            # Show clean text output
-            if clean_text:
-                print(f"\n{CYAN}assistant>{RESET} {clean_text}")
-
-            # Append the full assistant message (with emotion block intact for history)
-            messages.append(message)
-
-            # Check for frustration and inject lesson prompt if needed
-            if not message.tool_calls:
-                # Only show emotion bar on final response (no tool calls)
-                if message.content:
+            # If no tool calls, this turn is done
+            if not tool_calls:
+                if full_text:
                     print(emotion.format_bar())
                 if check_frustration(emotion, messages):
-                    # Continue the loop so the agent processes the lesson prompt
                     continue
                 break
 
             # Execute each tool call and feed results back
-            for tc in message.tool_calls:
-                args = json.loads(tc.function.arguments)
-                tool = find_tool(tc.function.name)
+            for tc in tool_calls:
+                args = json.loads(tc["arguments"])
+                tool = find_tool(tc["name"])
                 if tool:
-                    print(fmt_tool_call(tc.function.name, args))
+                    print(fmt_tool_call(tc["name"], args))
                     result = tool.call(**args)
                 else:
-                    result = f"[error] Unknown tool: {tc.function.name}"
-                print(fmt_tool_result(tc.function.name, result))
+                    result = f"[error] Unknown tool: {tc['name']}"
+                print(fmt_tool_result(tc["name"], result))
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tc.id,
+                        "tool_call_id": tc["id"],
                         "content": result,
                     }
                 )
